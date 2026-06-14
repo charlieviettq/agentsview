@@ -139,20 +139,35 @@ func looksLikeSkillReadCommand(cmd string) bool {
 }
 
 func skillPathsFromText(text string) []string {
-	matches := skillPathRE.FindAllStringSubmatch(text, -1)
+	matches := skillPathRE.FindAllStringSubmatchIndex(text, -1)
 	if len(matches) == 0 {
 		return nil
 	}
 	paths := make([]string, 0, len(matches))
 	for _, m := range matches {
-		for i := 1; i < len(m); i++ {
-			if m[i] != "" {
-				paths = append(paths, m[i])
+		if !skillPathMatchHasBoundary(text, m[1]) {
+			continue
+		}
+		for i := 2; i < len(m); i += 2 {
+			if m[i] >= 0 && m[i+1] >= 0 {
+				paths = append(paths, text[m[i]:m[i+1]])
 				break
 			}
 		}
 	}
 	return paths
+}
+
+func skillPathMatchHasBoundary(text string, end int) bool {
+	if end >= len(text) {
+		return true
+	}
+	switch text[end] {
+	case ' ', '\t', '\n', '\r', '"', '\'', ';', '&', '|', ')', '}', ']':
+		return true
+	default:
+		return false
+	}
 }
 
 func skillNameFromPath(path string) string {

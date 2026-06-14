@@ -186,12 +186,15 @@ import (
 // user message in the sidebar instead of the command text.
 // Re-parsing rewrites first_message with the new logic.)
 //
+// (43: Cursor JSONL tool_use blocks now run skill_name inference,
+// backfilling Read/ReadFile/Shell SKILL.md usage.)
+//
 // (42: Cursor/Codex parser now infers skill_name from read-like
 // SKILL.md tool calls so historical skill usage needs re-parsing.)
 //
 // (17: Codex <skill> template filtering.)
 // (16: <turn_aborted> system messages.)
-const dataVersion = 42
+const dataVersion = 43
 
 const tokenCoverageRepairStatsKey = "token_coverage_repair_v1"
 
