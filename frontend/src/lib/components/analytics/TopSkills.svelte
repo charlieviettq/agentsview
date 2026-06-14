@@ -1,8 +1,5 @@
 <script lang="ts">
   import { analytics } from "../../stores/analytics.svelte.js";
-  import { router } from "../../stores/router.svelte.js";
-  import { searchStore } from "../../stores/search.svelte.js";
-  import { ui } from "../../stores/ui.svelte.js";
   import type {
     SkillAgentBreakdown,
     SkillProjectBreakdown,
@@ -61,20 +58,22 @@
     });
   }
 
-  function breakdownLabel(
-    items: SkillAgentBreakdown[] | SkillProjectBreakdown[] | null,
-    key: "agent" | "project",
+  function projectBreakdownLabel(
+    items: SkillProjectBreakdown[] | null,
   ): string {
     const top = (items ?? []).slice(0, 2);
     if (top.length === 0) return "None";
     return top
       .map((item) => {
-        const name = key === "agent"
-          ? (item as SkillAgentBreakdown).agent
-          : (item as SkillProjectBreakdown).project;
-        return `${name}: ${item.count}`;
+        return `${item.project}: ${item.count}`;
       })
       .join(", ");
+  }
+
+  function agentPct(item: SkillAgentBreakdown, total: number): string {
+    if (total <= 0) return "0%";
+    const pct = (item.count / total) * 100;
+    return `${pct >= 10 ? pct.toFixed(0) : pct.toFixed(1)}%`;
   }
 
   let tooltip = $state<{
@@ -119,12 +118,6 @@
   function handleLeave() {
     tooltip = null;
   }
-
-  function openSkillSearch(skill: SkillUsage) {
-    router.navigate("sessions");
-    searchStore.search(skill.skill_name, analytics.project);
-    ui.activeModal = "commandPalette";
-  }
 </script>
 
 <div class="skills-container">
@@ -153,12 +146,11 @@
       <div class="section">
         <div class="skill-list">
           {#each skills.slice(0, 8) as skill}
-            <button
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
               class="skill-row"
-              title="Search related sessions"
               onmouseenter={(e) => handleSkillHover(e, skill)}
               onmouseleave={handleLeave}
-              onclick={() => openSkillSearch(skill)}
             >
               <span class="skill-name">{skill.skill_name}</span>
               <span class="bar-track">
@@ -176,13 +168,26 @@
               <span class="last-used">
                 {formatLastUsed(skill.last_used_at)}
               </span>
-            </button>
+            </div>
             <div class="breakdowns">
-              <span>
-                Agents: {breakdownLabel(skill.agent_breakdown, "agent")}
-              </span>
-              <span>
-                Projects: {breakdownLabel(skill.project_breakdown, "project")}
+              <div class="agent-breakdown" aria-label="Agent breakdown">
+                <span class="breakdown-label">Agents</span>
+                {#if skill.agent_breakdown?.length}
+                  {#each skill.agent_breakdown as agent}
+                    <span class="agent-chip">
+                      <span class="agent-name">{agent.agent}</span>
+                      <span class="agent-count">{agent.count.toLocaleString()}</span>
+                      <span class="agent-pct">
+                        {agentPct(agent, skill.call_count)}
+                      </span>
+                    </span>
+                  {/each}
+                {:else}
+                  <span class="muted">None</span>
+                {/if}
+              </div>
+              <span class="project-breakdown">
+                Projects: {projectBreakdownLabel(skill.project_breakdown)}
               </span>
             </div>
           {/each}
@@ -281,11 +286,9 @@
     gap: 8px;
     width: 100%;
     padding: 3px 4px;
-    border: 0;
     border-radius: var(--radius-sm);
     background: transparent;
     color: inherit;
-    cursor: pointer;
     text-align: left;
     transition: background 0.1s;
   }
@@ -333,18 +336,56 @@
 
   .breakdowns {
     display: flex;
+    align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
     min-width: 0;
-    padding: 0 4px 2px;
+    padding: 0 4px 6px;
     color: var(--text-muted);
     font-size: 9px;
   }
 
-  .breakdowns span {
+  .agent-breakdown {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .breakdown-label {
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .agent-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 160px;
+    padding: 2px 5px;
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-sm);
+    background: var(--bg-inset);
+    color: var(--text-secondary);
+  }
+
+  .agent-name,
+  .project-breakdown {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .agent-count {
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+  }
+
+  .agent-pct,
+  .muted {
+    color: var(--text-muted);
   }
 
   .trend-chart {

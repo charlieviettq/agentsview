@@ -226,7 +226,7 @@
         <ToolUsage />
       </div>
 
-      <div class="chart-panel">
+      <div class="chart-panel wide">
         <TopSkills />
       </div>
 

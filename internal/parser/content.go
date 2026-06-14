@@ -66,6 +66,17 @@ func ExtractTextContent(
 					if tc.SkillName == "" {
 						tc.SkillName = block.Get("input.name").Str
 					}
+				default:
+					tc.SkillName = inferCursorSkillName(
+						name,
+						tc.InputJSON,
+					)
+					if tc.SkillName == "" {
+						tc.SkillName = inferCodexSkillName(
+							name,
+							tc.InputJSON,
+						)
+					}
 				}
 				toolCalls = append(toolCalls, tc)
 			}
