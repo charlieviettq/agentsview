@@ -51,6 +51,7 @@ describe("HourOfWeekHeatmap", () => {
       vi.spyOn(analytics, "fetchSessionShape").mockResolvedValue(),
       vi.spyOn(analytics, "fetchVelocity").mockResolvedValue(),
       vi.spyOn(analytics, "fetchTools").mockResolvedValue(),
+      vi.spyOn(analytics, "fetchSkills").mockResolvedValue(),
       vi.spyOn(analytics, "fetchTopSessions").mockResolvedValue(),
       vi.spyOn(analytics, "fetchSignals").mockResolvedValue(),
     ];

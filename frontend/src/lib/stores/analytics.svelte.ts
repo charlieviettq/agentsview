@@ -7,6 +7,7 @@ import type {
   SessionShapeResponse,
   VelocityResponse,
   ToolsAnalyticsResponse,
+  SkillsAnalyticsResponse,
   TopSessionsResponse,
   SignalsAnalyticsResponse,
 } from "../api/types.js";
@@ -59,6 +60,7 @@ type Panel =
   | "sessionShape"
   | "velocity"
   | "tools"
+  | "skills"
   | "topSessions"
   | "signals";
 
@@ -89,6 +91,7 @@ class AnalyticsStore {
   sessionShape = $state<SessionShapeResponse | null>(null);
   velocity = $state<VelocityResponse | null>(null);
   tools = $state<ToolsAnalyticsResponse | null>(null);
+  skills = $state<SkillsAnalyticsResponse | null>(null);
   topSessions = $state<TopSessionsResponse | null>(null);
   signals = $state<SignalsAnalyticsResponse | null>(null);
   topMetric: TopSessionsMetric = $state("messages");
@@ -102,6 +105,7 @@ class AnalyticsStore {
     sessionShape: false,
     velocity: false,
     tools: false,
+    skills: false,
     topSessions: false,
     signals: false,
   });
@@ -115,6 +119,7 @@ class AnalyticsStore {
     sessionShape: false,
     velocity: false,
     tools: false,
+    skills: false,
     topSessions: false,
     signals: false,
   });
@@ -128,6 +133,7 @@ class AnalyticsStore {
     sessionShape: null,
     velocity: null,
     tools: null,
+    skills: null,
     topSessions: null,
     signals: null,
   });
@@ -141,6 +147,7 @@ class AnalyticsStore {
     sessionShape: 0,
     velocity: 0,
     tools: 0,
+    skills: 0,
     topSessions: 0,
     signals: 0,
   };
@@ -260,6 +267,7 @@ class AnalyticsStore {
     this.fetchSessionShape();
     this.fetchVelocity();
     this.fetchTools();
+    this.fetchSkills();
     this.fetchTopSessions();
     this.fetchSignals();
   }
@@ -321,6 +329,7 @@ class AnalyticsStore {
     this.fetchSessionShape();
     this.fetchVelocity();
     this.fetchTools();
+    this.fetchSkills();
     this.fetchTopSessions();
     this.fetchSignals();
   }
@@ -493,6 +502,7 @@ class AnalyticsStore {
       this.fetchSessionShape(),
       this.fetchVelocity(),
       this.fetchTools(),
+      this.fetchSkills(),
       this.fetchTopSessions(),
       this.fetchSignals(),
     ]);
@@ -618,6 +628,20 @@ class AnalyticsStore {
     );
   }
 
+  async fetchSkills() {
+    await this.executeFetch(
+      "skills",
+      () =>
+        AnalyticsService.getApiV1AnalyticsSkills(
+          this.filterParams(),
+        ) as unknown as Promise<SkillsAnalyticsResponse>,
+      (data) => {
+        this.skills = data;
+      },
+      () => this.skills !== null,
+    );
+  }
+
   async fetchTopSessions() {
     await this.executeFetch(
       "topSessions",
@@ -683,6 +707,7 @@ class AnalyticsStore {
     this.fetchSessionShape();
     this.fetchVelocity();
     this.fetchTools();
+    this.fetchSkills();
     this.fetchTopSessions();
     this.fetchSignals();
   }
@@ -713,6 +738,7 @@ class AnalyticsStore {
     this.fetchSessionShape();
     this.fetchVelocity();
     this.fetchTools();
+    this.fetchSkills();
     this.fetchTopSessions();
     this.fetchSignals();
   }

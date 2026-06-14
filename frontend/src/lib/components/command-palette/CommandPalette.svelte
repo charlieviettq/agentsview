@@ -19,7 +19,7 @@
 
   let inputRef: HTMLInputElement | undefined = $state(undefined);
   let selectedIndex: number = $state(0);
-  let inputValue: string = $state("");
+  let inputValue: string = $state(searchStore.query ?? "");
 
   // Clear state and reset sort whenever the palette is unmounted, regardless
   // of close path (Escape key, overlay click, Cmd+K toggle, or any other
@@ -133,6 +133,9 @@
   $effect(() => {
     if (inputRef) {
       inputRef.focus();
+      if (inputValue) {
+        inputRef.select();
+      }
     }
   });
 
