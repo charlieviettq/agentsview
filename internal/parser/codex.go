@@ -423,6 +423,7 @@ func (b *codexSessionBuilder) handleFunctionCall(
 
 	content := formatCodexFunctionCall(name, payload)
 	inputJSON := extractCodexInputJSON(payload)
+	skillName := inferCodexSkillName(name, inputJSON)
 	waitAgentIDs := []string(nil)
 	if isCodexWaitAgentCall(name) && callID != "" {
 		args, _ := parseCodexFunctionArgs(payload)
@@ -442,6 +443,7 @@ func (b *codexSessionBuilder) handleFunctionCall(
 			ToolName:  name,
 			Category:  NormalizeToolCategory(name),
 			InputJSON: inputJSON,
+			SkillName: skillName,
 		}},
 	})
 	if callID != "" {
