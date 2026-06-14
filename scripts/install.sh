@@ -1,10 +1,13 @@
 #!/bin/bash
 # agentsview installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/kenn-io/agentsview/main/scripts/install.sh | bash
+# Fork usage:
+#   curl -fsSL https://raw.githubusercontent.com/charlieviettq/agentsview/main/scripts/install.sh \
+#     | AGENTSVIEW_REPO=charlieviettq/agentsview bash
 
 set -euo pipefail
 
-REPO="kenn-io/agentsview"
+REPO="${AGENTSVIEW_REPO:-kenn-io/agentsview}"
 BINARY_NAME="agentsview"
 
 RED='\033[0;31m'
