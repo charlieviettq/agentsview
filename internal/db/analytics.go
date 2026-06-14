@@ -1743,11 +1743,198 @@ type ToolsAnalyticsResponse struct {
 	Trend      []ToolTrendEntry     `json:"trend"`
 }
 
+// SkillAgentBreakdown holds skill usage for one agent.
+type SkillAgentBreakdown struct {
+	Agent string `json:"agent"`
+	Count int    `json:"count"`
+}
+
+// SkillProjectBreakdown holds skill usage for one project.
+type SkillProjectBreakdown struct {
+	Project string `json:"project"`
+	Count   int    `json:"count"`
+}
+
+// SkillUsage holds usage metrics for one skill name.
+type SkillUsage struct {
+	SkillName        string                  `json:"skill_name"`
+	CallCount        int                     `json:"call_count"`
+	SessionCount     int                     `json:"session_count"`
+	AgentBreakdown   []SkillAgentBreakdown   `json:"agent_breakdown"`
+	ProjectBreakdown []SkillProjectBreakdown `json:"project_breakdown"`
+	LastUsedAt       string                  `json:"last_used_at"`
+	Pct              float64                 `json:"pct"`
+}
+
+// SkillTrendEntry holds skill call counts for one time bucket.
+type SkillTrendEntry struct {
+	Date    string         `json:"date"`
+	BySkill map[string]int `json:"by_skill"`
+}
+
+// SkillsAnalyticsResponse wraps skill usage analytics.
+type SkillsAnalyticsResponse struct {
+	TotalSkillCalls int               `json:"total_skill_calls"`
+	DistinctSkills  int               `json:"distinct_skills"`
+	BySkill         []SkillUsage      `json:"by_skill"`
+	Trend           []SkillTrendEntry `json:"trend"`
+}
+
+// SkillAnalyticsRow is a backend-neutral intermediate row used to
+// aggregate skill usage after each store applies its native filters.
+type SkillAnalyticsRow struct {
+	SessionID  string
+	SkillName  string
+	Agent      string
+	Project    string
+	Date       string
+	LastUsedAt string
+	Count      int
+}
+
+type skillUsageAccumulator struct {
+	callCount     int
+	sessionIDs    map[string]struct{}
+	agentCounts   map[string]int
+	projectCounts map[string]int
+	lastUsedAt    string
+}
+
+// BuildSkillsAnalytics folds backend-neutral skill rows into the public
+// response shape. Skill names are trimmed and empty names are ignored.
+func BuildSkillsAnalytics(rows []SkillAnalyticsRow) SkillsAnalyticsResponse {
+	resp := SkillsAnalyticsResponse{
+		BySkill: []SkillUsage{},
+		Trend:   []SkillTrendEntry{},
+	}
+	if len(rows) == 0 {
+		return resp
+	}
+
+	bySkill := map[string]*skillUsageAccumulator{}
+	trendBuckets := map[string]map[string]int{}
+
+	for _, row := range rows {
+		name := strings.TrimSpace(row.SkillName)
+		if name == "" || row.Count <= 0 {
+			continue
+		}
+		acc := bySkill[name]
+		if acc == nil {
+			acc = &skillUsageAccumulator{
+				sessionIDs:    map[string]struct{}{},
+				agentCounts:   map[string]int{},
+				projectCounts: map[string]int{},
+			}
+			bySkill[name] = acc
+		}
+		acc.callCount += row.Count
+		resp.TotalSkillCalls += row.Count
+		if row.SessionID != "" {
+			acc.sessionIDs[row.SessionID] = struct{}{}
+		}
+		if row.Agent != "" {
+			acc.agentCounts[row.Agent] += row.Count
+		}
+		if row.Project != "" {
+			acc.projectCounts[row.Project] += row.Count
+		}
+		if row.LastUsedAt > acc.lastUsedAt {
+			acc.lastUsedAt = row.LastUsedAt
+		}
+		if row.Date != "" {
+			week := bucketDate(row.Date, "week")
+			if trendBuckets[week] == nil {
+				trendBuckets[week] = map[string]int{}
+			}
+			trendBuckets[week][name] += row.Count
+		}
+	}
+
+	resp.DistinctSkills = len(bySkill)
+	for name, acc := range bySkill {
+		usage := SkillUsage{
+			SkillName:        name,
+			CallCount:        acc.callCount,
+			SessionCount:     len(acc.sessionIDs),
+			AgentBreakdown:   skillAgentBreakdowns(acc.agentCounts),
+			ProjectBreakdown: skillProjectBreakdowns(acc.projectCounts),
+			LastUsedAt:       acc.lastUsedAt,
+			Pct: math.Round(
+				float64(acc.callCount)/
+					float64(resp.TotalSkillCalls)*1000,
+			) / 10,
+		}
+		resp.BySkill = append(resp.BySkill, usage)
+	}
+	sort.Slice(resp.BySkill, func(i, j int) bool {
+		if resp.BySkill[i].CallCount != resp.BySkill[j].CallCount {
+			return resp.BySkill[i].CallCount > resp.BySkill[j].CallCount
+		}
+		return resp.BySkill[i].SkillName < resp.BySkill[j].SkillName
+	})
+
+	for week, skills := range trendBuckets {
+		resp.Trend = append(resp.Trend, SkillTrendEntry{
+			Date: week, BySkill: skills,
+		})
+	}
+	sort.Slice(resp.Trend, func(i, j int) bool {
+		return resp.Trend[i].Date < resp.Trend[j].Date
+	})
+
+	return resp
+}
+
+func skillAgentBreakdowns(
+	counts map[string]int,
+) []SkillAgentBreakdown {
+	out := make([]SkillAgentBreakdown, 0, len(counts))
+	for agent, count := range counts {
+		out = append(out, SkillAgentBreakdown{
+			Agent: agent, Count: count,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Agent < out[j].Agent
+	})
+	return out
+}
+
+func skillProjectBreakdowns(
+	counts map[string]int,
+) []SkillProjectBreakdown {
+	out := make([]SkillProjectBreakdown, 0, len(counts))
+	for project, count := range counts {
+		out = append(out, SkillProjectBreakdown{
+			Project: project, Count: count,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Project < out[j].Project
+	})
+	return out
+}
+
 func analyticsToolsQuery(placeholders string) string {
 	return `SELECT session_id, category, COUNT(*)
 		FROM tool_calls
 		WHERE session_id IN ` + placeholders + `
 		GROUP BY session_id, category`
+}
+
+func analyticsSkillsQuery(placeholders string) string {
+	return `SELECT session_id, TRIM(skill_name), COUNT(*)
+		FROM tool_calls
+		WHERE session_id IN ` + placeholders + `
+			AND TRIM(COALESCE(skill_name, '')) != ''
+		GROUP BY session_id, TRIM(skill_name)`
 }
 
 // GetAnalyticsTools returns tool usage analytics aggregated
@@ -1963,6 +2150,118 @@ func (db *DB) GetAnalyticsTools(
 	})
 
 	return resp, nil
+}
+
+// GetAnalyticsSkills returns skill usage analytics aggregated
+// from non-empty tool_calls.skill_name values.
+func (db *DB) GetAnalyticsSkills(
+	ctx context.Context, f AnalyticsFilter,
+) (SkillsAnalyticsResponse, error) {
+	loc := f.location()
+	dateCol := "COALESCE(NULLIF(started_at, ''), created_at)"
+	where, args := f.buildWhere(dateCol)
+
+	var timeIDs map[string]bool
+	if f.HasTimeFilter() {
+		var err error
+		timeIDs, err = db.filteredSessionIDs(ctx, f)
+		if err != nil {
+			return SkillsAnalyticsResponse{}, err
+		}
+	}
+
+	sessQ := `SELECT id, ` + dateCol + `, agent, project
+		FROM sessions WHERE ` + where
+
+	sessRows, err := db.getReader().QueryContext(ctx, sessQ, args...)
+	if err != nil {
+		return SkillsAnalyticsResponse{},
+			fmt.Errorf("querying skill sessions: %w", err)
+	}
+	defer sessRows.Close()
+
+	type sessInfo struct {
+		date    string
+		ts      string
+		agent   string
+		project string
+	}
+	sessionMap := make(map[string]sessInfo)
+	var sessionIDs []string
+
+	for sessRows.Next() {
+		var id, ts, agent, project string
+		if err := sessRows.Scan(
+			&id, &ts, &agent, &project,
+		); err != nil {
+			return SkillsAnalyticsResponse{},
+				fmt.Errorf("scanning skill session: %w", err)
+		}
+		date := localDate(ts, loc)
+		if !inDateRange(date, f.From, f.To) {
+			continue
+		}
+		if timeIDs != nil && !timeIDs[id] {
+			continue
+		}
+		sessionMap[id] = sessInfo{
+			date:    date,
+			ts:      ts,
+			agent:   agent,
+			project: project,
+		}
+		sessionIDs = append(sessionIDs, id)
+	}
+	if err := sessRows.Err(); err != nil {
+		return SkillsAnalyticsResponse{},
+			fmt.Errorf("iterating skill sessions: %w", err)
+	}
+	if len(sessionIDs) == 0 {
+		return BuildSkillsAnalytics(nil), nil
+	}
+
+	var skillRows []SkillAnalyticsRow
+	err = queryChunked(sessionIDs,
+		func(chunk []string) error {
+			ph, chunkArgs := inPlaceholders(chunk)
+			q := analyticsSkillsQuery(ph)
+			rows, qErr := db.getReader().QueryContext(
+				ctx, q, chunkArgs...,
+			)
+			if qErr != nil {
+				return fmt.Errorf(
+					"querying skill tool_calls: %w", qErr,
+				)
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var sid, skill string
+				var count int
+				if err := rows.Scan(
+					&sid, &skill, &count,
+				); err != nil {
+					return fmt.Errorf(
+						"scanning skill tool_call: %w", err,
+					)
+				}
+				info := sessionMap[sid]
+				skillRows = append(skillRows, SkillAnalyticsRow{
+					SessionID:  sid,
+					SkillName:  skill,
+					Agent:      info.agent,
+					Project:    info.project,
+					Date:       info.date,
+					LastUsedAt: info.ts,
+					Count:      count,
+				})
+			}
+			return rows.Err()
+		})
+	if err != nil {
+		return SkillsAnalyticsResponse{}, err
+	}
+
+	return BuildSkillsAnalytics(skillRows), nil
 }
 
 // --- Velocity ---

@@ -400,6 +400,16 @@ func contractAnalyticsTrendsAndUsage(
 	require.NotEmpty(t, tools.ByCategory)
 	require.Equal(t, "search", tools.ByCategory[0].Category)
 
+	skills, err := store.GetAnalyticsSkills(ctx, AnalyticsFilter{
+		From: "2026-01-10",
+		To:   "2026-01-10",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, skills.TotalSkillCalls)
+	require.Equal(t, 1, skills.DistinctSkills)
+	require.NotEmpty(t, skills.BySkill)
+	require.Equal(t, "contract-search", skills.BySkill[0].SkillName)
+
 	trends, err := store.GetTrendsTerms(ctx, AnalyticsFilter{
 		From:     "2026-01-09",
 		To:       "2026-01-12",
@@ -591,6 +601,7 @@ func seedStoreContractSQLite(
 					withToolCall(ToolCall{
 						ToolName:      "search",
 						Category:      "search",
+						SkillName:     "contract-search",
 						ToolUseID:     "tool-alpha-1",
 						InputJSON:     toolInput,
 						ResultContent: "legacy result mentions parity",

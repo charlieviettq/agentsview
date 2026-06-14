@@ -90,6 +90,15 @@ func (c *analyticsProbeConn) QueryContext(
 	normalized := strings.ToLower(query)
 	switch {
 	case strings.Contains(normalized, "from sessions"):
+		if strings.Contains(normalized, "agent, project") {
+			return &analyticsProbeRows{
+				columns: []string{"id", "date", "agent", "project"},
+				values: [][]driver.Value{
+					{"s1", time.Date(2024, 6, 3, 9, 0, 0, 0, time.UTC), "claude", "alpha"},
+					{"s2", time.Date(2024, 6, 4, 9, 0, 0, 0, time.UTC), "codex", "beta"},
+				},
+			}, nil
+		}
 		return &analyticsProbeRows{
 			columns: []string{"id", "date", "agent"},
 			values: [][]driver.Value{
@@ -98,6 +107,19 @@ func (c *analyticsProbeConn) QueryContext(
 			},
 		}, nil
 	case strings.Contains(normalized, "from tool_calls"):
+		if strings.Contains(normalized, "trim(coalesce(skill_name") {
+			if !strings.Contains(normalized, "group by session_id") ||
+				!strings.Contains(normalized, "trim(coalesce(skill_name") {
+				return nil, errors.New("skill query must group by session_id and skill_name")
+			}
+			return &analyticsProbeRows{
+				columns: []string{"session_id", "skill_name", "count"},
+				values: [][]driver.Value{
+					{"s1", "review-code", int64(2)},
+					{"s2", "review-code", int64(1)},
+				},
+			}, nil
+		}
 		if !strings.Contains(normalized, "group by session_id, category") {
 			return nil, errors.New("tool call query must group by session_id, category")
 		}
@@ -167,6 +189,36 @@ func TestGetAnalyticsToolsAggregatesToolCallsInSQL(t *testing.T) {
 	require.NotEmpty(t, resp.ByCategory)
 	assert.Equal(t, "Read", resp.ByCategory[0].Category)
 	assert.Equal(t, 3, resp.ByCategory[0].Count)
+}
+
+func TestGetAnalyticsSkillsAggregatesToolCallsInSQL(t *testing.T) {
+	store := &Store{
+		pg: newAnalyticsProbeDB(t, &analyticsProbeState{}),
+	}
+
+	resp, err := store.GetAnalyticsSkills(
+		context.Background(),
+		db.AnalyticsFilter{
+			From: "2024-06-01",
+			To:   "2024-06-30",
+		},
+	)
+	require.NoError(t, err, "GetAnalyticsSkills")
+
+	assert.Equal(t, 3, resp.TotalSkillCalls)
+	assert.Equal(t, 1, resp.DistinctSkills)
+	require.NotEmpty(t, resp.BySkill)
+	assert.Equal(t, "review-code", resp.BySkill[0].SkillName)
+	assert.Equal(t, 3, resp.BySkill[0].CallCount)
+	assert.Equal(t, 2, resp.BySkill[0].SessionCount)
+	assert.Equal(t, []db.SkillAgentBreakdown{
+		{Agent: "claude", Count: 2},
+		{Agent: "codex", Count: 1},
+	}, resp.BySkill[0].AgentBreakdown)
+	assert.Equal(t, []db.SkillProjectBreakdown{
+		{Project: "alpha", Count: 2},
+		{Project: "beta", Count: 1},
+	}, resp.BySkill[0].ProjectBreakdown)
 }
 
 func TestQueryVelocityMsgsScansNativeTimestamps(t *testing.T) {
