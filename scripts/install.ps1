@@ -1,9 +1,11 @@
 # agentsview installer for Windows
 # Usage: powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/kenn-io/agentsview/main/scripts/install.ps1 | iex"
+# Fork usage:
+#   powershell -ExecutionPolicy ByPass -c '$env:AGENTSVIEW_REPO="charlieviettq/agentsview"; irm https://raw.githubusercontent.com/charlieviettq/agentsview/main/scripts/install.ps1 | iex'
 
 $ErrorActionPreference = 'Stop'
 
-$repo = 'kenn-io/agentsview'
+$repo = if ($env:AGENTSVIEW_REPO) { $env:AGENTSVIEW_REPO } else { 'kenn-io/agentsview' }
 $binaryName = 'agentsview.exe'
 
 function Write-Info($msg) { Write-Host $msg -ForegroundColor Green }

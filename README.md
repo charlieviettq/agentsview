@@ -21,6 +21,14 @@ Or download the **desktop app** (macOS / Windows) from
 [GitHub Releases](https://github.com/kenn-io/agentsview/releases) or via
 homebrew: `brew install --cask agentsview`
 
+To install release builds from a fork, set `AGENTSVIEW_REPO` to the fork's
+`owner/repo` while running that fork's installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/agentsview/main/scripts/install.sh \
+  | AGENTSVIEW_REPO=<owner>/agentsview bash
+```
+
 Or run the published Docker image:
 
 ```bash

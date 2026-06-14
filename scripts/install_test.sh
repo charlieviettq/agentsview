@@ -32,10 +32,13 @@ assert_eq() {
 # intercept that and emit $MOCK_FINAL_URL (the URL after following 302s).
 MOCK_FINAL_URL=""
 MOCK_CURL_EXIT=0
+MOCK_CURL_LAST_URL_FILE="$(mktemp)"
+trap 'rm -f "$MOCK_CURL_LAST_URL_FILE"' EXIT
 curl() {
     if [ "$MOCK_CURL_EXIT" != "0" ]; then
         return "$MOCK_CURL_EXIT"
     fi
+    printf '%s' "${@: -1}" > "$MOCK_CURL_LAST_URL_FILE"
     printf '%s' "$MOCK_FINAL_URL"
 }
 export -f curl
@@ -45,6 +48,16 @@ echo "=== get_latest_version parsing ==="
 # Normal release tag
 MOCK_FINAL_URL="https://github.com/kenn-io/agentsview/releases/tag/v0.8.0"
 assert_eq "release tag" "v0.8.0" "$(get_latest_version)"
+assert_eq "default repo URL" "https://github.com/kenn-io/agentsview/releases/latest" "$(cat "$MOCK_CURL_LAST_URL_FILE")"
+
+# Fork override
+AGENTSVIEW_REPO="charlieviettq/agentsview"
+REPO="${AGENTSVIEW_REPO:-kenn-io/agentsview}"
+MOCK_FINAL_URL="https://github.com/charlieviettq/agentsview/releases/tag/v0.33.1-charlie.1"
+assert_eq "fork release tag" "v0.33.1-charlie.1" "$(get_latest_version)"
+assert_eq "fork repo URL" "https://github.com/charlieviettq/agentsview/releases/latest" "$(cat "$MOCK_CURL_LAST_URL_FILE")"
+unset AGENTSVIEW_REPO
+REPO="${AGENTSVIEW_REPO:-kenn-io/agentsview}"
 
 # Newer release tag
 MOCK_FINAL_URL="https://github.com/kenn-io/agentsview/releases/tag/v0.30.1"
