@@ -1171,6 +1171,57 @@ func (s *Store) GetAnalyticsTools(
 	return resp, nil
 }
 
+func (s *Store) GetAnalyticsSkills(
+	ctx context.Context, f db.AnalyticsFilter,
+) (db.SkillsAnalyticsResponse, error) {
+	sessions, err := s.analyticsSessions(ctx, f)
+	if err != nil {
+		return db.SkillsAnalyticsResponse{}, err
+	}
+	meta := map[string]duckAnalyticsSession{}
+	for _, r := range sessions {
+		meta[r.id] = r
+	}
+	if len(meta) == 0 {
+		return db.BuildSkillsAnalytics(nil), nil
+	}
+
+	rows, err := s.duck.QueryContext(ctx, `
+		SELECT session_id, TRIM(COALESCE(skill_name, ''))
+		FROM tool_calls
+		WHERE TRIM(COALESCE(skill_name, '')) != ''`)
+	if err != nil {
+		return db.SkillsAnalyticsResponse{}, err
+	}
+	defer rows.Close()
+
+	var skillRows []db.SkillAnalyticsRow
+	for rows.Next() {
+		var sid, skill string
+		if err := rows.Scan(&sid, &skill); err != nil {
+			return db.SkillsAnalyticsResponse{}, err
+		}
+		r, ok := meta[sid]
+		if !ok {
+			continue
+		}
+		ts := analyticsDateTime(r)
+		skillRows = append(skillRows, db.SkillAnalyticsRow{
+			SessionID:  sid,
+			SkillName:  skill,
+			Agent:      r.agent,
+			Project:    r.project,
+			Date:       analyticsLocalDate(ts, f.Timezone),
+			LastUsedAt: ts,
+			Count:      1,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return db.SkillsAnalyticsResponse{}, err
+	}
+	return db.BuildSkillsAnalytics(skillRows), nil
+}
+
 func (s *Store) GetAnalyticsVelocity(
 	ctx context.Context, f db.AnalyticsFilter,
 ) (db.VelocityResponse, error) {

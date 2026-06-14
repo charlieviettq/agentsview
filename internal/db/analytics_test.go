@@ -1314,10 +1314,171 @@ func TestAnalyticsToolsToolCallsQueryAggregatesInSQL(t *testing.T) {
 		"group by session_id, category")
 }
 
+func TestGetAnalyticsSkills(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+
+	t.Run("EmptyDB", func(t *testing.T) {
+		resp, err := d.GetAnalyticsSkills(ctx, baseFilter())
+		require.NoError(t, err, "GetAnalyticsSkills")
+		assert.Equal(t, 0, resp.TotalSkillCalls, "TotalSkillCalls")
+		assert.Equal(t, 0, resp.DistinctSkills, "DistinctSkills")
+		assert.Empty(t, resp.BySkill, "BySkill")
+		assert.Empty(t, resp.Trend, "Trend")
+	})
+
+	insertSession(t, d, "sk1", "alpha", func(s *Session) {
+		s.StartedAt = new("2024-06-01T09:00:00Z")
+		s.MessageCount = 3
+		s.Agent = "claude"
+		s.Machine = "mac"
+	})
+	sk1m1 := asstMsg("sk1", 0, "skill calls")
+	sk1m1.HasToolUse = true
+	sk1m1.ToolCalls = []ToolCall{
+		{SessionID: "sk1", ToolName: "Skill", Category: "Skill", SkillName: "review-code"},
+		{SessionID: "sk1", ToolName: "Skill", Category: "Skill", SkillName: "review-code"},
+		{SessionID: "sk1", ToolName: "Skill", Category: "Skill", SkillName: " write-tests "},
+		{SessionID: "sk1", ToolName: "Skill", Category: "Skill"},
+		{SessionID: "sk1", ToolName: "Skill", Category: "Skill", SkillName: "   "},
+	}
+	insertMessages(t, d, sk1m1)
+
+	insertSession(t, d, "sk2", "beta", func(s *Session) {
+		s.StartedAt = new("2024-06-02T10:00:00Z")
+		s.MessageCount = 1
+		s.Agent = "codex"
+		s.Machine = "linux"
+	})
+	sk2m1 := asstMsg("sk2", 0, "skill call")
+	sk2m1.HasToolUse = true
+	sk2m1.ToolCalls = []ToolCall{
+		{SessionID: "sk2", ToolName: "Skill", Category: "Skill", SkillName: "review-code"},
+	}
+	insertMessages(t, d, sk2m1)
+
+	insertSession(t, d, "sk3", "alpha", func(s *Session) {
+		s.StartedAt = new("2024-06-03T11:00:00Z")
+		s.MessageCount = 1
+		s.Agent = "codex"
+		s.Machine = "mac"
+	})
+	_, err := d.getWriter().Exec(
+		`UPDATE sessions SET is_automated = 1 WHERE id = 'sk3'`,
+	)
+	require.NoError(t, err, "mark sk3 automated")
+	sk3m1 := asstMsg("sk3", 0, "automated skill call")
+	sk3m1.HasToolUse = true
+	sk3m1.ToolCalls = []ToolCall{
+		{SessionID: "sk3", ToolName: "Skill", Category: "Skill", SkillName: "write-tests"},
+	}
+	insertMessages(t, d, sk3m1)
+
+	t.Run("Aggregates", func(t *testing.T) {
+		resp, err := d.GetAnalyticsSkills(ctx, baseFilter())
+		require.NoError(t, err, "GetAnalyticsSkills")
+		assert.Equal(t, 5, resp.TotalSkillCalls, "TotalSkillCalls")
+		assert.Equal(t, 2, resp.DistinctSkills, "DistinctSkills")
+		require.Len(t, resp.BySkill, 2, "BySkill")
+
+		review := resp.BySkill[0]
+		assert.Equal(t, "review-code", review.SkillName, "SkillName")
+		assert.Equal(t, 3, review.CallCount, "CallCount")
+		assert.Equal(t, 2, review.SessionCount, "SessionCount")
+		assert.Equal(t, 60.0, review.Pct, "Pct")
+		assert.Equal(t, "2024-06-02T10:00:00Z", review.LastUsedAt, "LastUsedAt")
+		assert.Equal(t, []SkillAgentBreakdown{
+			{Agent: "claude", Count: 2},
+			{Agent: "codex", Count: 1},
+		}, review.AgentBreakdown, "AgentBreakdown")
+		assert.Equal(t, []SkillProjectBreakdown{
+			{Project: "alpha", Count: 2},
+			{Project: "beta", Count: 1},
+		}, review.ProjectBreakdown, "ProjectBreakdown")
+
+		write := resp.BySkill[1]
+		assert.Equal(t, "write-tests", write.SkillName, "trimmed SkillName")
+		assert.Equal(t, 2, write.CallCount, "write CallCount")
+		assert.Equal(t, 2, write.SessionCount, "write SessionCount")
+		assert.Equal(t, 40.0, write.Pct, "write Pct")
+		assert.Equal(t, "2024-06-03T11:00:00Z", write.LastUsedAt, "write LastUsedAt")
+	})
+
+	t.Run("Trend", func(t *testing.T) {
+		resp, err := d.GetAnalyticsSkills(ctx, baseFilter())
+		require.NoError(t, err, "GetAnalyticsSkills")
+		require.Len(t, resp.Trend, 2, "Trend")
+		assert.Equal(t, "2024-05-27", resp.Trend[0].Date, "first week")
+		assert.Equal(t, 3, resp.Trend[0].BySkill["review-code"], "week 1 review")
+		assert.Equal(t, 1, resp.Trend[0].BySkill["write-tests"], "week 1 write")
+		assert.Equal(t, "2024-06-03", resp.Trend[1].Date, "second week")
+		assert.Equal(t, 1, resp.Trend[1].BySkill["write-tests"], "week 2 write")
+	})
+
+	t.Run("Filters", func(t *testing.T) {
+		f := baseFilter()
+		f.Project = "alpha"
+		resp, err := d.GetAnalyticsSkills(ctx, f)
+		require.NoError(t, err, "project GetAnalyticsSkills")
+		assert.Equal(t, 4, resp.TotalSkillCalls, "project TotalSkillCalls")
+
+		f = baseFilter()
+		f.Agent = "claude"
+		resp, err = d.GetAnalyticsSkills(ctx, f)
+		require.NoError(t, err, "agent GetAnalyticsSkills")
+		assert.Equal(t, 3, resp.TotalSkillCalls, "agent TotalSkillCalls")
+
+		f = baseFilter()
+		f.Machine = "linux"
+		resp, err = d.GetAnalyticsSkills(ctx, f)
+		require.NoError(t, err, "machine GetAnalyticsSkills")
+		assert.Equal(t, 1, resp.TotalSkillCalls, "machine TotalSkillCalls")
+
+		f = baseFilter()
+		f.From = "2024-06-01"
+		f.To = "2024-06-01"
+		resp, err = d.GetAnalyticsSkills(ctx, f)
+		require.NoError(t, err, "date GetAnalyticsSkills")
+		assert.Equal(t, 3, resp.TotalSkillCalls, "date TotalSkillCalls")
+
+		f = baseFilter()
+		f.ExcludeAutomated = true
+		resp, err = d.GetAnalyticsSkills(ctx, f)
+		require.NoError(t, err, "automation GetAnalyticsSkills")
+		assert.Equal(t, 4, resp.TotalSkillCalls, "automation TotalSkillCalls")
+	})
+
+	t.Run("EmptyDateRange", func(t *testing.T) {
+		resp, err := d.GetAnalyticsSkills(ctx, emptyFilter())
+		require.NoError(t, err, "GetAnalyticsSkills")
+		assert.Equal(t, 0, resp.TotalSkillCalls, "TotalSkillCalls")
+		assert.Equal(t, 0, resp.DistinctSkills, "DistinctSkills")
+	})
+}
+
+func TestAnalyticsSkillsToolCallsQueryAggregatesInSQL(t *testing.T) {
+	q := analyticsSkillsQuery("(?,?)")
+	normalized := strings.Join(strings.Fields(strings.ToLower(q)), " ")
+
+	assert.Contains(t, normalized,
+		"select session_id, trim(skill_name), count(*)")
+	assert.Contains(t, normalized,
+		"trim(coalesce(skill_name, '')) != ''")
+	assert.Contains(t, normalized,
+		"group by session_id, trim(skill_name)")
+}
+
 func TestGetAnalyticsToolsCanceled(t *testing.T) {
 	d := testDB(t)
 	ctx := canceledCtx()
 	_, err := d.GetAnalyticsTools(ctx, baseFilter())
+	requireCanceledErr(t, err)
+}
+
+func TestGetAnalyticsSkillsCanceled(t *testing.T) {
+	d := testDB(t)
+	ctx := canceledCtx()
+	_, err := d.GetAnalyticsSkills(ctx, baseFilter())
 	requireCanceledErr(t, err)
 }
 

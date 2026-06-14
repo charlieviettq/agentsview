@@ -1617,6 +1617,127 @@ func (s *Store) GetAnalyticsTools(
 	return resp, nil
 }
 
+// GetAnalyticsSkills returns skill usage analytics.
+func (s *Store) GetAnalyticsSkills(
+	ctx context.Context, f db.AnalyticsFilter,
+) (db.SkillsAnalyticsResponse, error) {
+	loc := analyticsLocation(f)
+	pb := &paramBuilder{}
+	where := buildAnalyticsWhere(f, pgDateCol, pb)
+
+	var timeIDs map[string]bool
+	if f.HasTimeFilter() {
+		var err error
+		timeIDs, err = s.filteredSessionIDs(ctx, f)
+		if err != nil {
+			return db.SkillsAnalyticsResponse{}, err
+		}
+	}
+
+	sessQ := `SELECT id, ` + pgDateCol + `, agent, project
+		FROM sessions WHERE ` + where
+
+	sessRows, err := s.pg.QueryContext(ctx, sessQ, pb.args...)
+	if err != nil {
+		return db.SkillsAnalyticsResponse{},
+			fmt.Errorf("querying skill sessions: %w", err)
+	}
+	defer sessRows.Close()
+
+	type sessInfo struct {
+		date    string
+		ts      string
+		agent   string
+		project string
+	}
+	sessionMap := make(map[string]sessInfo)
+	var sessionIDs []string
+
+	for sessRows.Next() {
+		var id, agent, project string
+		var ts *time.Time
+		if err := sessRows.Scan(
+			&id, &ts, &agent, &project,
+		); err != nil {
+			return db.SkillsAnalyticsResponse{},
+				fmt.Errorf("scanning skill session: %w", err)
+		}
+		tsText := scanDateCol(ts)
+		date := localDate(tsText, loc)
+		if !inDateRange(date, f.From, f.To) {
+			continue
+		}
+		if timeIDs != nil && !timeIDs[id] {
+			continue
+		}
+		sessionMap[id] = sessInfo{
+			date:    date,
+			ts:      tsText,
+			agent:   agent,
+			project: project,
+		}
+		sessionIDs = append(sessionIDs, id)
+	}
+	if err := sessRows.Err(); err != nil {
+		return db.SkillsAnalyticsResponse{},
+			fmt.Errorf("iterating skill sessions: %w", err)
+	}
+	if len(sessionIDs) == 0 {
+		return db.BuildSkillsAnalytics(nil), nil
+	}
+
+	var skillRows []db.SkillAnalyticsRow
+	err = pgQueryChunked(sessionIDs,
+		func(chunk []string) error {
+			chunkPB := &paramBuilder{}
+			ph := pgInPlaceholders(chunk, chunkPB)
+			q := `SELECT session_id,
+					TRIM(COALESCE(skill_name, '')),
+					COUNT(*)
+				FROM tool_calls
+				WHERE session_id IN ` + ph + `
+					AND TRIM(COALESCE(skill_name, '')) != ''
+				GROUP BY session_id,
+					TRIM(COALESCE(skill_name, ''))`
+			rows, qErr := s.pg.QueryContext(
+				ctx, q, chunkPB.args...,
+			)
+			if qErr != nil {
+				return fmt.Errorf(
+					"querying skill tool_calls: %w", qErr,
+				)
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var sid, skill string
+				var count int
+				if err := rows.Scan(
+					&sid, &skill, &count,
+				); err != nil {
+					return fmt.Errorf(
+						"scanning skill tool_call: %w", err,
+					)
+				}
+				info := sessionMap[sid]
+				skillRows = append(skillRows, db.SkillAnalyticsRow{
+					SessionID:  sid,
+					SkillName:  skill,
+					Agent:      info.agent,
+					Project:    info.project,
+					Date:       info.date,
+					LastUsedAt: info.ts,
+					Count:      count,
+				})
+			}
+			return rows.Err()
+		})
+	if err != nil {
+		return db.SkillsAnalyticsResponse{}, err
+	}
+
+	return db.BuildSkillsAnalytics(skillRows), nil
+}
+
 // --- Velocity ---
 
 // velocityMsg holds per-message data needed for velocity.

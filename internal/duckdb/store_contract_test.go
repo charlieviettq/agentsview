@@ -199,6 +199,13 @@ func duckContractAnalyticsTrendsAndUsage(
 	require.NoError(t, err)
 	require.Equal(t, 1, tools.TotalCalls)
 
+	skills, err := store.GetAnalyticsSkills(ctx, filter)
+	require.NoError(t, err)
+	require.Equal(t, 1, skills.TotalSkillCalls)
+	require.Equal(t, 1, skills.DistinctSkills)
+	require.NotEmpty(t, skills.BySkill)
+	require.Equal(t, "duck-search", skills.BySkill[0].SkillName)
+
 	trendTerms, err := db.ParseTrendTerms([]string{"alpha"})
 	require.NoError(t, err)
 	trends, err := store.GetTrendsTerms(ctx, filter, trendTerms, "week")
