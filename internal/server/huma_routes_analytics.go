@@ -20,6 +20,7 @@ func (s *Server) registerAnalyticsRoutes() {
 	get(s, group, "/sessions", "Get session shape analytics", s.humaAnalyticsSessionShape)
 	get(s, group, "/velocity", "Get velocity analytics", s.humaAnalyticsVelocity)
 	get(s, group, "/tools", "Get tool analytics", s.humaAnalyticsTools)
+	get(s, group, "/skills", "Get skill analytics", s.humaAnalyticsSkills)
 	get(s, group, "/top-sessions", "Get top sessions", s.humaAnalyticsTopSessions)
 	get(s, group, "/signals", "Get signal analytics", s.humaAnalyticsSignals)
 }
@@ -214,6 +215,21 @@ func (s *Server) humaAnalyticsTools(
 		return nil, internalError("analytics error", err)
 	}
 	return &jsonOutput[db.ToolsAnalyticsResponse]{Body: result}, nil
+}
+
+func (s *Server) humaAnalyticsSkills(
+	ctx context.Context,
+	in *AnalyticsFilterInput,
+) (*jsonOutput[db.SkillsAnalyticsResponse], error) {
+	f, err := analyticsFilterFromInput(*in)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.db.GetAnalyticsSkills(ctx, f)
+	if err != nil {
+		return nil, internalError("analytics error", err)
+	}
+	return &jsonOutput[db.SkillsAnalyticsResponse]{Body: result}, nil
 }
 
 func (s *Server) humaAnalyticsTopSessions(

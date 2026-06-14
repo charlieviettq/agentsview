@@ -768,6 +768,7 @@ func seedDuckDBSyncFixture(t *testing.T, local *db.DB) syncFixture {
 					db.ToolCall{
 						ToolName:  "search",
 						Category:  "search",
+						SkillName: "duck-search",
 						ToolUseID: "tool-alpha",
 						InputJSON: `{"query":"duck"}`,
 						ResultEvents: []db.ToolResultEvent{{
