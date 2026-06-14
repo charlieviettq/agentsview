@@ -1,37 +1,19 @@
 // @vitest-environment jsdom
 import {
   afterEach,
-  beforeEach,
   describe,
   expect,
   it,
   vi,
-  type MockInstance,
 } from "vitest";
 import { mount, tick, unmount } from "svelte";
 // @ts-ignore
 import TopSkills from "./TopSkills.svelte";
 import { analytics } from "../../stores/analytics.svelte.js";
-import { router } from "../../stores/router.svelte.js";
-import { searchStore } from "../../stores/search.svelte.js";
 import { ui } from "../../stores/ui.svelte.js";
 
 describe("TopSkills", () => {
-  let navigateSpy: MockInstance;
-  let searchSpy: MockInstance;
-
-  beforeEach(() => {
-    navigateSpy = vi
-      .spyOn(router, "navigate")
-      .mockImplementation(() => true);
-    searchSpy = vi
-      .spyOn(searchStore, "search")
-      .mockImplementation(() => {});
-  });
-
   afterEach(() => {
-    navigateSpy.mockRestore();
-    searchSpy.mockRestore();
     analytics.skills = null;
     analytics.project = "";
     // @ts-ignore
@@ -56,6 +38,7 @@ describe("TopSkills", () => {
           session_count: 3,
           agent_breakdown: [
             { agent: "codex", count: 5 },
+            { agent: "cursor", count: 1 },
             { agent: "claude", count: 2 },
           ],
           project_breakdown: [
@@ -94,26 +77,35 @@ describe("TopSkills", () => {
     expect(document.body.textContent).toContain("9 calls");
     expect(document.body.textContent).toContain("2 skills");
     expect(document.body.textContent).toContain("skill-creator");
+    expect(document.body.textContent).toContain("7");
     expect(document.body.textContent).toContain("3 sessions");
-    expect(document.body.textContent).toContain("Agents: codex: 5, claude: 2");
+    expect(document.body.textContent).toContain("Agents");
+    expect(document.body.textContent).toContain("codex");
+    expect(document.body.textContent).toContain("5");
+    expect(document.body.textContent).toContain("71%");
+    expect(document.body.textContent).toContain("cursor");
+    expect(document.body.textContent).toContain("1");
+    expect(document.body.textContent).toContain("14%");
+    expect(document.body.textContent).toContain("claude");
+    expect(document.body.textContent).toContain("2");
+    expect(document.body.textContent).toContain("29%");
     expect(document.body.textContent).toContain("Projects: agentsview: 4, notes: 3");
     expect(document.body.textContent).toContain("Weekly Trend");
 
     unmount(component);
   });
 
-  it("opens session search when clicking a skill", async () => {
+  it("does not expose incomplete click-to-search behavior", async () => {
     const component = mountWithData();
     await tick();
 
-    const row = document.querySelector<HTMLButtonElement>(".skill-row");
+    const row = document.querySelector<HTMLElement>(".skill-row");
     expect(row).toBeTruthy();
+    expect(row!.tagName).not.toBe("BUTTON");
     row!.click();
     await tick();
 
-    expect(navigateSpy).toHaveBeenCalledWith("sessions");
-    expect(searchSpy).toHaveBeenCalledWith("skill-creator", "agentsview");
-    expect(ui.activeModal).toBe("commandPalette");
+    expect(ui.activeModal).toBeNull();
 
     unmount(component);
   });
