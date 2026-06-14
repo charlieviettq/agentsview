@@ -9,6 +9,7 @@
   import SessionShape from "./SessionShape.svelte";
   import VelocityMetrics from "./VelocityMetrics.svelte";
   import ToolUsage from "./ToolUsage.svelte";
+  import TopSkills from "./TopSkills.svelte";
   import AgentComparison from "./AgentComparison.svelte";
   import SessionHealthSection from "./SessionHealthSection.svelte";
   import TopSessions from "./TopSessions.svelte";
@@ -223,6 +224,10 @@
 
       <div class="chart-panel">
         <ToolUsage />
+      </div>
+
+      <div class="chart-panel">
+        <TopSkills />
       </div>
 
       <div class="chart-panel wide">
