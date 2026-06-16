@@ -55,6 +55,7 @@ type codexSessionBuilder struct {
 	startedAt                time.Time
 	endedAt                  time.Time
 	sessionID                string
+	cwd                      string // session working dir from meta
 	project                  string
 	ordinal                  int
 	currentModel             string
@@ -242,6 +243,7 @@ func (b *codexSessionBuilder) handleSessionMeta(
 	b.sessionID = payload.Get("id").Str
 
 	if cwd := payload.Get("cwd").Str; cwd != "" {
+		b.cwd = cwd
 		branch := payload.Get("git.branch").Str
 		if proj := ExtractProjectFromCwdWithBranch(cwd, branch); proj != "" {
 			b.project = proj
@@ -437,6 +439,7 @@ func (b *codexSessionBuilder) handleFunctionCall(
 
 	content := formatCodexFunctionCall(name, payload)
 	inputJSON := extractCodexInputJSON(payload)
+	skillName := inferCodexSkillNameWithBase(name, inputJSON, b.cwd)
 	waitAgentIDs := []string(nil)
 	if isCodexWaitAgentCall(name) && callID != "" {
 		args, _ := parseCodexFunctionArgs(payload)
@@ -456,6 +459,7 @@ func (b *codexSessionBuilder) handleFunctionCall(
 			ToolName:  name,
 			Category:  NormalizeToolCategory(name),
 			InputJSON: inputJSON,
+			SkillName: skillName,
 		}},
 	})
 	if callID != "" {
@@ -1517,6 +1521,7 @@ func classifyCodexTermination(lastTaskEvent string) TerminationStatus {
 // dedup state, and the fork replay gate (#643).
 type codexIncrementalSeed struct {
 	model                    string
+	cwd                      string
 	firstUserContent         string
 	sawUserTurnAfterFirst    bool
 	mayReplayFirstUserPrompt bool
@@ -1554,9 +1559,12 @@ func seedCodexIncrementalState(
 		payload := gjson.Get(line, "payload")
 		if lineType == codexTypeSessionMeta {
 			// Mirror processLine: the fork's own meta arms the
-			// gate, and replayed parent metas are dropped while
-			// it is active.
+			// gate and supplies cwd, and replayed parent metas are
+			// dropped while it is active.
 			if !seed.forkGate.active {
+				if cwd := payload.Get("cwd").Str; cwd != "" {
+					seed.cwd = cwd
+				}
 				seed.forkGate.armFromMeta(
 					payload,
 					parseTimestamp(gjson.Get(line, "timestamp").Str),
@@ -1639,6 +1647,7 @@ func ParseCodexSessionFrom(
 	// just as a full parse would.
 	seed := seedCodexIncrementalState(path, offset)
 	b.currentModel = seed.model
+	b.cwd = seed.cwd
 	b.firstUserContent = seed.firstUserContent
 	b.sawUserTurnAfterFirst = seed.sawUserTurnAfterFirst
 	b.mayReplayFirstUserPrompt = seed.mayReplayFirstUserPrompt

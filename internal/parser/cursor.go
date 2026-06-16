@@ -247,12 +247,17 @@ func extractAssistantContent(
 				}
 				i++
 			}
+			inputJSON := cursorToolInputJSON(
+				toolName,
+				lines[bodyStart:i],
+			)
 			toolCalls = append(toolCalls, ParsedToolCall{
-				ToolName: toolName,
-				Category: NormalizeToolCategory(toolName),
-				InputJSON: cursorToolInputJSON(
+				ToolName:  toolName,
+				Category:  NormalizeToolCategory(toolName),
+				InputJSON: inputJSON,
+				SkillName: inferToolSkillName(
 					toolName,
-					lines[bodyStart:i],
+					inputJSON,
 				),
 			})
 			continue

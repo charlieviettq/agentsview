@@ -588,9 +588,9 @@ func TestMigration_ToolResultEventsTable(t *testing.T) {
 		"expected tool_result_events table after reopen")
 }
 
-func TestCurrentDataVersionCodexTitle(t *testing.T) {
-	assert.Equal(t, 45, CurrentDataVersion(),
-		"Codex session_index.jsonl title import requires a data version bump")
+func TestCurrentDataVersionSkillInference(t *testing.T) {
+	assert.Equal(t, 46, CurrentDataVersion(),
+		"Cursor/Codex skill_name inference requires a data version bump")
 }
 
 func TestInsertMessages_PreservesToolResultEvents(t *testing.T) {

@@ -208,9 +208,18 @@ import (
 // user message in the sidebar instead of the command text.
 // Re-parsing rewrites first_message with the new logic.)
 //
+// (46: Cursor and Codex parsers now infer skill_name from
+// read-like SKILL.md tool calls. Covers Read/ReadFile tool
+// calls and Codex/Cursor shell reads across the Cursor JSONL
+// and plain-text transcript paths, with ~ expansion, relative
+// paths resolved against the tool-call workdir or session cwd,
+// glob/space handling, and grep/rg pattern-vs-file
+// classification, so historical skill usage is backfilled on
+// re-parse.)
+//
 // (17: Codex <skill> template filtering.)
 // (16: <turn_aborted> system messages.)
-const dataVersion = 45
+const dataVersion = 46
 
 const tokenCoverageRepairStatsKey = "token_coverage_repair_v1"
 
