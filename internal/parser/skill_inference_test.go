@@ -130,6 +130,8 @@ func TestInferCodexSkillNameIgnoresWriteCommands(t *testing.T) {
 		"mkdir -p " + filepath.Dir(path),
 		"git add " + path,
 		"sed -i '' 's/a/b/' " + path,
+		"sed -ni 's/a/b/' " + path,
+		"sed -Ei 's/a/b/' " + path,
 		"echo hi && sed -i '' 's/a/b/' " + path,
 		"cat > " + path,
 	} {
@@ -337,6 +339,26 @@ func TestTokenizeCommand(t *testing.T) {
 			cmd:  `rg 'see SKILL.md for'`,
 			want: []string{"rg", "see SKILL.md for"},
 		},
+		{
+			name: "drops redirect target attached to operator",
+			cmd:  "cat foo >skills/x/SKILL.md",
+			want: []string{"cat", "foo"},
+		},
+		{
+			name: "drops redirect operator attached to source",
+			cmd:  "cat file> out",
+			want: []string{"cat", "file"},
+		},
+		{
+			name: "drops space-separated redirect target",
+			cmd:  "cat a > b",
+			want: []string{"cat", "a"},
+		},
+		{
+			name: "keeps quoted redirect char as content",
+			cmd:  `grep ">" f`,
+			want: []string{"grep", ">", "f"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -347,7 +369,9 @@ func TestTokenizeCommand(t *testing.T) {
 
 func TestInferCodexSkillNameIgnoresRedirectTargets(t *testing.T) {
 	// A redirect destination (>, >>, 2> ...) is written, not read, so a
-	// bare SKILL.md target must not be inferred even with a workdir file.
+	// SKILL.md target must not be inferred even with a workdir file. The
+	// operator may be attached to the target (>SKILL.md) or to the source
+	// token (file>), so whitespace around it cannot be relied upon.
 	path := writeTestSkill(t, "data-analytics", "data-analytics:index")
 	workdir := filepath.Dir(path)
 
@@ -356,6 +380,11 @@ func TestInferCodexSkillNameIgnoresRedirectTargets(t *testing.T) {
 		"grep name file > SKILL.md",
 		"cat foo >> SKILL.md",
 		"cat foo 2> SKILL.md",
+		"cat foo >SKILL.md",
+		"cat foo >>SKILL.md",
+		"cat file> SKILL.md",
+		"grep name file 2>SKILL.md",
+		"cat foo >skills/data-analytics/SKILL.md",
 	} {
 		t.Run(cmd, func(t *testing.T) {
 			got := inferCodexSkillName(
@@ -366,6 +395,18 @@ func TestInferCodexSkillNameIgnoresRedirectTargets(t *testing.T) {
 			assert.Empty(t, got)
 		})
 	}
+}
+
+func TestInferCodexSkillNameReadsFileDespiteQuotedRedirectChar(t *testing.T) {
+	// A quoted ">" is a literal search pattern, not a redirect operator,
+	// so the SKILL.md file operand is still read.
+	path := writeTestSkill(t, "data-analytics", "data-analytics:index")
+
+	got := inferCodexSkillName(
+		"exec_command",
+		`{"cmd":`+quoteJSON(t, `grep ">" `+path)+`}`,
+	)
+	assert.Equal(t, "data-analytics:index", got)
 }
 
 func TestInferCodexSkillNameReadsSourceDespiteRedirect(t *testing.T) {

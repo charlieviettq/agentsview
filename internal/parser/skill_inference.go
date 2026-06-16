@@ -19,10 +19,9 @@ import (
 const maxSkillFrontmatterSize = 64 << 10
 
 var (
-	skillNameByPath  sync.Map
-	skillPathRE      = regexp.MustCompile(`(?:"([^"]*[/\\]SKILL\.md)"|'([^']*[/\\]SKILL\.md)'|(\S*[/\\]SKILL\.md)|(?:^|[\s"'])(SKILL\.md))`)
-	shellSegmentRE   = regexp.MustCompile(`\s*(?:&&|\|\||;|&|\|)\s*`)
-	outputRedirectRE = regexp.MustCompile(`^[0-9&]*>>?$`)
+	skillNameByPath sync.Map
+	skillPathRE     = regexp.MustCompile(`(?:"([^"]*[/\\]SKILL\.md)"|'([^']*[/\\]SKILL\.md)'|(\S*[/\\]SKILL\.md)|(?:^|[\s"'])(SKILL\.md))`)
+	shellSegmentRE  = regexp.MustCompile(`\s*(?:&&|\|\||;|&|\|)\s*`)
 )
 
 // searchValueFlags lists grep/rg flags (short and long) that consume
@@ -100,7 +99,7 @@ func skillPathsFromSegment(seg string) []string {
 	if len(tokens) == 0 {
 		return nil
 	}
-	args := stripRedirects(tokens[1:])
+	args := tokens[1:]
 	switch commandVerb(tokens[0]) {
 	case "grep", "rg":
 		return skillPathsFromSearchArgs(args)
@@ -119,31 +118,24 @@ func skillPathsFromSegment(seg string) []string {
 }
 
 // sedWritesInPlace reports whether a sed invocation edits its file
-// operands in place via -i (optionally with a backup suffix, e.g.
-// -i.bak) or --in-place, which makes a SKILL.md operand a write target.
+// operands in place, which makes a SKILL.md operand a write target. It
+// matches --in-place[=suffix] and any single-dash short-flag cluster
+// containing -i, whether alone (-i, -i.bak) or combined with other
+// flags (-ni, -Ei); i is the only sed short option named i, so its
+// presence in a short cluster always means in-place editing.
 func sedWritesInPlace(args []string) bool {
 	for _, arg := range args {
-		if strings.HasPrefix(arg, "-i") || strings.HasPrefix(arg, "--in-place") {
+		switch {
+		case strings.HasPrefix(arg, "--in-place"):
+			return true
+		case strings.HasPrefix(arg, "--"):
+			// Some other long option (e.g. --posix); not in-place even
+			// though its name may contain the letter i.
+		case strings.HasPrefix(arg, "-") && strings.ContainsRune(arg, 'i'):
 			return true
 		}
 	}
 	return false
-}
-
-// stripRedirects drops output-redirection operators (>, >>, 2>, &>,
-// ...) together with their target token, so a redirect destination
-// such as the SKILL.md in `cat foo > SKILL.md` is written, not read,
-// and is never collected as a file operand.
-func stripRedirects(args []string) []string {
-	var out []string
-	for i := 0; i < len(args); i++ {
-		if outputRedirectRE.MatchString(args[i]) {
-			i++ // also skip the redirect target token
-			continue
-		}
-		out = append(out, args[i])
-	}
-	return out
 }
 
 // tokenizeCommand splits a command segment into tokens on unquoted
@@ -151,17 +143,29 @@ func stripRedirects(args []string) []string {
 // stays one token (e.g. the multi-word pattern in `grep "a b" f`).
 // Unlike a full shell lexer it treats backslash literally, preserving
 // Windows paths such as C:\skills\foo\SKILL.md.
+//
+// An unquoted output redirection (>, >>, 2>, ...) is dropped together
+// with its target token, because that target is written, not read.
+// Doing this during tokenization, rather than over the token slice
+// afterward, is what keeps a quoted ">" (a literal search pattern) from
+// being mistaken for a redirect operator once the quotes are stripped.
 func tokenizeCommand(seg string) []string {
 	var tokens []string
 	var cur strings.Builder
 	inToken := false
+	skipNext := false
 	var quote rune
 	flush := func() {
-		if inToken {
-			tokens = append(tokens, cur.String())
-			cur.Reset()
-			inToken = false
+		if !inToken {
+			return
 		}
+		if skipNext {
+			skipNext = false
+		} else {
+			tokens = append(tokens, cur.String())
+		}
+		cur.Reset()
+		inToken = false
 	}
 	for _, r := range seg {
 		switch {
@@ -176,6 +180,11 @@ func tokenizeCommand(seg string) []string {
 			inToken = true
 		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
 			flush()
+		case r == '>':
+			// Unquoted '>' starts an output redirect: emit any preceding
+			// source token, then drop the redirect target that follows.
+			flush()
+			skipNext = true
 		default:
 			cur.WriteRune(r)
 			inToken = true
