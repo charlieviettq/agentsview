@@ -323,6 +323,41 @@ func TestTokenizeCommand(t *testing.T) {
 	}
 }
 
+func TestInferCodexSkillNameIgnoresRedirectTargets(t *testing.T) {
+	// A redirect destination (>, >>, 2> ...) is written, not read, so a
+	// bare SKILL.md target must not be inferred even with a workdir file.
+	path := writeTestSkill(t, "data-analytics", "data-analytics:index")
+	workdir := filepath.Dir(path)
+
+	for _, cmd := range []string{
+		"cat foo > SKILL.md",
+		"grep name file > SKILL.md",
+		"cat foo >> SKILL.md",
+		"cat foo 2> SKILL.md",
+	} {
+		t.Run(cmd, func(t *testing.T) {
+			got := inferCodexSkillName(
+				"exec_command",
+				`{"cmd":`+quoteJSON(t, cmd)+
+					`,"workdir":`+quoteJSON(t, workdir)+`}`,
+			)
+			assert.Empty(t, got)
+		})
+	}
+}
+
+func TestInferCodexSkillNameReadsSourceDespiteRedirect(t *testing.T) {
+	// SKILL.md is the input being read; output is redirected elsewhere,
+	// so the read is still inferred.
+	path := writeTestSkill(t, "data-analytics", "data-analytics:index")
+
+	got := inferCodexSkillName(
+		"exec_command",
+		`{"cmd":`+quoteJSON(t, "cat "+path+" > out.txt")+`}`,
+	)
+	assert.Equal(t, "data-analytics:index", got)
+}
+
 func TestInferCodexSkillNameSearchCommandStillReadsPathOperand(t *testing.T) {
 	// A path-qualified SKILL.md operand to grep/rg is a real file read
 	// (the pattern is a separate token), so it is still inferred.

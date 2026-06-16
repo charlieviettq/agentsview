@@ -19,11 +19,12 @@ import (
 const maxSkillFrontmatterSize = 64 << 10
 
 var (
-	skillNameByPath sync.Map
-	skillPathRE     = regexp.MustCompile(`(?:"([^"]*[/\\]SKILL\.md)"|'([^']*[/\\]SKILL\.md)'|(\S*[/\\]SKILL\.md)|(?:^|[\s"'])(SKILL\.md))`)
-	readCommandRE   = regexp.MustCompile(`(?:^|(?:&&|\|\||[;&|])\s*)(?:[A-Za-z0-9_.-]+/)?(?:cat|sed|head|tail|less|more|rg|grep)\b`)
-	writeCommandRE  = regexp.MustCompile(`(?:^|(?:&&|\|\||[;&|])\s*)(?:[A-Za-z0-9_.-]+/)?(?:cp|mv|mkdir|touch|rm|chmod|chown|install|tee)\b|\bgit\s+(?:add|mv|rm)\b|\bsed\s+-i\b|>\s*["']?[^"'\s]*[/\\]SKILL\.md\b`)
-	shellSegmentRE  = regexp.MustCompile(`\s*(?:&&|\|\||;|&|\|)\s*`)
+	skillNameByPath  sync.Map
+	skillPathRE      = regexp.MustCompile(`(?:"([^"]*[/\\]SKILL\.md)"|'([^']*[/\\]SKILL\.md)'|(\S*[/\\]SKILL\.md)|(?:^|[\s"'])(SKILL\.md))`)
+	readCommandRE    = regexp.MustCompile(`(?:^|(?:&&|\|\||[;&|])\s*)(?:[A-Za-z0-9_.-]+/)?(?:cat|sed|head|tail|less|more|rg|grep)\b`)
+	writeCommandRE   = regexp.MustCompile(`(?:^|(?:&&|\|\||[;&|])\s*)(?:[A-Za-z0-9_.-]+/)?(?:cp|mv|mkdir|touch|rm|chmod|chown|install|tee)\b|\bgit\s+(?:add|mv|rm)\b|\bsed\s+-i\b|>\s*["']?[^"'\s]*[/\\]SKILL\.md\b`)
+	shellSegmentRE   = regexp.MustCompile(`\s*(?:&&|\|\||;|&|\|)\s*`)
+	outputRedirectRE = regexp.MustCompile(`^[0-9&]*>>?$`)
 )
 
 // searchValueFlags lists grep/rg flags (short and long) that consume
@@ -101,14 +102,31 @@ func skillPathsFromSegment(seg string) []string {
 	if len(tokens) == 0 {
 		return nil
 	}
+	args := stripRedirects(tokens[1:])
 	switch commandVerb(tokens[0]) {
 	case "grep", "rg":
-		return skillPathsFromSearchArgs(tokens[1:])
+		return skillPathsFromSearchArgs(args)
 	case "cat", "sed", "head", "tail", "less", "more":
-		return skillFilePaths(tokens[1:])
+		return skillFilePaths(args)
 	default:
 		return nil
 	}
+}
+
+// stripRedirects drops output-redirection operators (>, >>, 2>, &>,
+// ...) together with their target token, so a redirect destination
+// such as the SKILL.md in `cat foo > SKILL.md` is written, not read,
+// and is never collected as a file operand.
+func stripRedirects(args []string) []string {
+	var out []string
+	for i := 0; i < len(args); i++ {
+		if outputRedirectRE.MatchString(args[i]) {
+			i++ // also skip the redirect target token
+			continue
+		}
+		out = append(out, args[i])
+	}
+	return out
 }
 
 // tokenizeCommand splits a command segment into tokens on unquoted
